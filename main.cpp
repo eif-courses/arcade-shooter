@@ -257,7 +257,7 @@ int main()
         if (!lifeDrop.active && std::rand() % 600 == 0)
         {
             lifeDrop.active = true;
-            lifeDrop.shape.setPosition({float(std::rand() % SCREEN_WIDTH), -20});
+            lifeDrop.shape.setPosition({static_cast<float>(std::rand() % SCREEN_WIDTH), -20});
         }
 
         if (lifeDrop.active)
