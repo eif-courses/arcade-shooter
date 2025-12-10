@@ -106,8 +106,26 @@ int main()
 
     sf::Sound shootSound(shootBuffer), hitSound(hitBuffer);
 
-    shootSound.setVolume(10.f);   // 40% volume
-    hitSound.setVolume(10.f);     // 50% volume
+    shootSound.setVolume(10.f);   // 10% volume
+    hitSound.setVolume(10.f);     // 10% volume
+
+
+    // --------- BACKGROUND MUSIC ---------
+    sf::Music music;
+
+    if (!music.openFromFile("/home/marius/CLionProjects/arcade-shooter/easy_music.wav"))   // or .wav
+    {
+        std::cout << "ERROR: Could not load music file\n";
+    }
+    else
+    {
+        music.setVolume(15.f);
+        music.play();
+    }
+
+
+
+
 
 
     // --------- PLAYER ---------
@@ -150,6 +168,14 @@ int main()
     // ================= GAME LOOP =================
     while (window.isOpen())
     {
+
+        // ----- PERFECT INFINITE LOOP (SFML 3 SAFE METHOD) -----
+        if (music.getStatus() == sf::SoundSource::Status::Stopped)
+        {
+            music.play();
+        }
+
+
         // --------- EVENTS ---------
         while (const std::optional event = window.pollEvent())
             if (event->is<sf::Event::Closed>())
