@@ -1,19 +1,30 @@
 #include <SFML/Graphics.hpp>
+#include <SFML/Audio.hpp>
 #include <optional>
 #include <cstdlib>
 #include <ctime>
+#include <iostream>
 #include <string>
 
 // ---------------- CONFIG ----------------
 constexpr int SCREEN_WIDTH  = 1024;
 constexpr int SCREEN_HEIGHT = 768;
-constexpr int MAX_ENEMIES   = 5;
+constexpr int MAX_ENEMIES   = 6;
+constexpr int MAX_BULLETS   = 40;
 
 // ---------------- STRUCTS ----------------
 struct Player
 {
     sf::RectangleShape shape;
     float speed{};
+    int lives{};
+};
+
+enum class WeaponType
+{
+    Single,
+    Burst,
+    Heavy
 };
 
 struct Bullet
@@ -30,167 +41,285 @@ struct Enemy
     bool active{};
 };
 
+struct LifeDrop
+{
+    sf::CircleShape shape;
+    bool active{};
+    float speed{};
+};
+
+struct WeaponDrop
+{
+    sf::RectangleShape shape;
+    bool active{};
+    float speed{};
+    WeaponType type{};
+};
+
 // ---------------- MAIN ----------------
 int main()
 {
     std::srand(static_cast<unsigned>(std::time(nullptr)));
 
+    sf::Clock fireClock;
+
+    WeaponType currentWeapon = WeaponType::Single;
+
     // --------- WINDOW ---------
     sf::RenderWindow window(
         sf::VideoMode({SCREEN_WIDTH, SCREEN_HEIGHT}),
-        "Arcade Shooter"
+        "Arcade Shooter - Pickups & Sound"
     );
     window.setFramerateLimit(60);
 
-    // --------- SCORE UI ---------
+    // --------- UI ---------
     int score = 0;
     sf::Font font;
-    sf::Text scoreText(font) ;
+    sf::Text scoreText(font), livesText(font), weaponText(font);
 
-    if (font.openFromFile("/home/marius/CLionProjects/arcade-shooter/arial.ttf"))   // put arial.ttf next to executable
+    if (font.openFromFile("/home/marius/CLionProjects/arcade-shooter/arial.ttf"))
     {
         scoreText.setCharacterSize(22);
         scoreText.setFillColor(sf::Color::White);
         scoreText.setPosition({10.f, 10.f});
+
+        livesText.setCharacterSize(22);
+        livesText.setFillColor(sf::Color::White);
+        livesText.setPosition({10.f, 40.f});
+
+        weaponText.setCharacterSize(22);
+        weaponText.setFillColor(sf::Color::White);
+        weaponText.setPosition({10.f, 70.f});
     }
+
+    // --------- SOUND ---------
+    sf::SoundBuffer shootBuffer, hitBuffer;
+    if (!shootBuffer.loadFromFile("/home/marius/CLionProjects/arcade-shooter/laser.wav"))
+    {
+        std::cout << "ERROR: Failed to load laser.wav\n";
+    }
+
+    if (!hitBuffer.loadFromFile("/home/marius/CLionProjects/arcade-shooter/explosion.wav"))
+    {
+        std::cout << "ERROR: Failed to load explosion.wav\n";
+    }
+
+    sf::Sound shootSound(shootBuffer), hitSound(hitBuffer);
+
+    shootSound.setVolume(10.f);   // 40% volume
+    hitSound.setVolume(10.f);     // 50% volume
+
 
     // --------- PLAYER ---------
     Player player;
     player.shape.setSize({60.f, 20.f});
     player.shape.setFillColor(sf::Color::Green);
     player.shape.setPosition({
-        SCREEN_WIDTH / 2.f - player.shape.getSize().x / 2.f,
-        SCREEN_HEIGHT - player.shape.getSize().y - 5.f
+        SCREEN_WIDTH / 2.f - 30.f,
+        SCREEN_HEIGHT - 30.f
     });
     player.speed = 6.f;
+    player.lives = 3;
 
-    // --------- BULLET ---------
-    Bullet bullet;
-    bullet.shape.setSize({5.f, 15.f});
-    bullet.shape.setFillColor(sf::Color::Red);
-    bullet.speed = 10.f;
-    bullet.active = false;
+    // --------- BULLETS ---------
+    Bullet bullets[MAX_BULLETS];
+    for (auto& b : bullets) b.active = false;
 
     // --------- ENEMIES ---------
     Enemy enemies[MAX_ENEMIES];
-
-    for (int i = 0; i < MAX_ENEMIES; ++i)
+    for (auto& e : enemies)
     {
-        enemies[i].shape.setSize({40.f, 20.f});
-        enemies[i].shape.setFillColor(sf::Color::Yellow);
-        enemies[i].speed = 2.f;
-        enemies[i].active = false;
+        e.shape.setSize({40.f, 20.f});
+        e.shape.setFillColor(sf::Color::Yellow);
+        e.active = false;
     }
+
+    // --------- LIFE DROP ---------
+    LifeDrop lifeDrop;
+    lifeDrop.shape.setRadius(10.f);
+    lifeDrop.shape.setFillColor(sf::Color::Cyan);
+    lifeDrop.speed = 2.f;
+    lifeDrop.active = false;
+
+    // --------- WEAPON DROP ---------
+    WeaponDrop weaponDrop;
+    weaponDrop.shape.setSize({20.f, 20.f});
+    weaponDrop.speed = 2.2f;
+    weaponDrop.active = false;
 
     // ================= GAME LOOP =================
     while (window.isOpen())
     {
-        // --------- EVENTS (ONLY ONE-TIME ACTIONS) ---------
+        // --------- EVENTS ---------
         while (const std::optional event = window.pollEvent())
-        {
             if (event->is<sf::Event::Closed>())
                 window.close();
-        }
 
-        // --------- PLAYER MOVEMENT (REAL-TIME INPUT) ---------
+        // --------- PLAYER MOVE ---------
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::A))
-            player.shape.move({-player.speed, 0.f});
-
+            player.shape.move({-player.speed, 0});
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::D))
-            player.shape.move({player.speed, 0.f});
+            player.shape.move({player.speed, 0});
 
-        // Keep player inside screen
         auto pos = player.shape.getPosition();
-        if (pos.x < 0.f) pos.x = 0.f;
-        if (pos.x > SCREEN_WIDTH - player.shape.getSize().x)
-            pos.x = SCREEN_WIDTH - player.shape.getSize().x;
+        if (pos.x < 0) pos.x = 0;
+        if (pos.x > SCREEN_WIDTH - 60) pos.x = SCREEN_WIDTH - 60;
         player.shape.setPosition(pos);
 
-        // --------- BULLET SHOOTING ---------
-        if (!bullet.active && sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space))
+        // --------- SHOOTING (SPACE + COOLDOWN) ---------
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Key::Space) &&
+            fireClock.getElapsedTime().asMilliseconds() > 250)
         {
-            bullet.active = true;
-            bullet.shape.setPosition({
-                player.shape.getPosition().x + player.shape.getSize().x / 2.f - 2.5f,
-                player.shape.getPosition().y - 15.f
-            });
-        }
+            fireClock.restart();
+            shootSound.play();
 
-        if (bullet.active)
-        {
-            bullet.shape.move({0.f, -bullet.speed});
-            if (bullet.shape.getPosition().y + bullet.shape.getSize().y < 0.f)
-                bullet.active = false;
-        }
-
-        // --------- ENEMY SPAWNING & MOVEMENT ---------
-        for (int i = 0; i < MAX_ENEMIES; ++i)
-        {
-            if (!enemies[i].active)
+            auto spawn = [&](float offset, float speed, sf::Vector2f size)
             {
-                if (std::rand() % 200 == 0)
-                {
-                    enemies[i].active = true;
-                    float x = static_cast<float>(std::rand() % (SCREEN_WIDTH - 40));
-                    enemies[i].shape.setPosition({x, -20.f});
-                    enemies[i].speed = 1.5f + static_cast<float>(std::rand() % 200) / 100.f;
-                }
+                for (auto& b : bullets)
+                    if (!b.active)
+                    {
+                        b.active = true;
+                        b.speed = speed;
+                        b.shape.setSize(size);
+                        b.shape.setPosition({
+                            player.shape.getPosition().x + offset,
+                            player.shape.getPosition().y - size.y
+                        });
+                        break;
+                    }
+            };
+
+            if (currentWeapon == WeaponType::Single)
+                spawn(30.f, 10.f, {5.f, 15.f});
+            else if (currentWeapon == WeaponType::Burst)
+            {
+                spawn(15.f, 10.f, {5.f, 15.f});
+                spawn(30.f, 10.f, {5.f, 15.f});
+                spawn(45.f, 10.f, {5.f, 15.f});
             }
             else
-            {
-                enemies[i].shape.move({0.f, enemies[i].speed});
+                spawn(24.f, 6.f, {14.f, 20.f});
+        }
 
-                if (enemies[i].shape.getPosition().y > SCREEN_HEIGHT)
-                    enemies[i].active = false;
+        // --------- BULLETS UPDATE ---------
+        for (auto& b : bullets)
+            if (b.active)
+            {
+                b.shape.move({0, -b.speed});
+                if (b.shape.getPosition().y < 0)
+                    b.active = false;
+            }
+
+        // --------- ENEMIES ---------
+        for (auto& e : enemies)
+        {
+            if (!e.active && std::rand() % 150 == 0)
+            {
+                e.active = true;
+                e.shape.setPosition({float(std::rand() % (SCREEN_WIDTH - 40)), -20});
+                e.speed = 2.f;
+            }
+            else if (e.active)
+            {
+                e.shape.move({0, e.speed});
+                if (e.shape.getPosition().y > SCREEN_HEIGHT)
+                    e.active = false;
             }
         }
 
-        // --------- COLLISION: BULLET VS ENEMIES ---------
-        if (bullet.active)
+        // --------- LIFE DROP ---------
+        if (!lifeDrop.active && std::rand() % 600 == 0)
         {
-            for (int i = 0; i < MAX_ENEMIES; ++i)
-            {
-                if (enemies[i].active &&
-                    bullet.shape.getGlobalBounds()
-                        .findIntersection(enemies[i].shape.getGlobalBounds()))
+            lifeDrop.active = true;
+            lifeDrop.shape.setPosition({float(std::rand() % SCREEN_WIDTH), -20});
+        }
+
+        if (lifeDrop.active)
+        {
+            lifeDrop.shape.move({0, lifeDrop.speed});
+            if (lifeDrop.shape.getPosition().y > SCREEN_HEIGHT)
+                lifeDrop.active = false;
+        }
+
+        // --------- WEAPON DROP ---------
+        if (!weaponDrop.active && std::rand() % 700 == 0)
+        {
+            weaponDrop.active = true;
+            weaponDrop.shape.setPosition({float(std::rand() % SCREEN_WIDTH), -20});
+
+            int w = std::rand() % 3;
+            if (w == 0) { weaponDrop.type = WeaponType::Single; weaponDrop.shape.setFillColor(sf::Color::Cyan); }
+            if (w == 1) { weaponDrop.type = WeaponType::Burst;  weaponDrop.shape.setFillColor(sf::Color::Magenta); }
+            if (w == 2) { weaponDrop.type = WeaponType::Heavy;  weaponDrop.shape.setFillColor(sf::Color::Red); }
+        }
+
+        if (weaponDrop.active)
+        {
+            weaponDrop.shape.move({0, weaponDrop.speed});
+            if (weaponDrop.shape.getPosition().y > SCREEN_HEIGHT)
+                weaponDrop.active = false;
+        }
+
+        // --------- COLLISIONS ---------
+        for (auto& b : bullets)
+            for (auto& e : enemies)
+                if (b.active && e.active &&
+                    b.shape.getGlobalBounds().findIntersection(e.shape.getGlobalBounds()))
                 {
-                    enemies[i].active = false;
-                    bullet.active = false;
-                    ++score;
+                    b.active = false;
+                    e.active = false;
+                    hitSound.play();
+                    score++;
                 }
-            }
-        }
 
-        // --------- COLLISION: ENEMY VS PLAYER (GAME OVER) ---------
-        for (int i = 0; i < MAX_ENEMIES; ++i)
-        {
-            if (enemies[i].active &&
-                enemies[i].shape.getGlobalBounds()
-                    .findIntersection(player.shape.getGlobalBounds()))
+        for (auto& e : enemies)
+            if (e.active &&
+                e.shape.getGlobalBounds().findIntersection(player.shape.getGlobalBounds()))
             {
-                window.close();   // simple game over
+                e.active = false;
+                player.lives--;
+                if (player.lives <= 0) window.close();
             }
+
+        if (lifeDrop.active &&
+            lifeDrop.shape.getGlobalBounds().findIntersection(player.shape.getGlobalBounds()))
+        {
+            lifeDrop.active = false;
+            player.lives++;
         }
 
-        // --------- UPDATE UI ---------
-        if (font.getInfo().family != "")
-            scoreText.setString("Score: " + std::to_string(score));
+        if (weaponDrop.active &&
+            weaponDrop.shape.getGlobalBounds().findIntersection(player.shape.getGlobalBounds()))
+        {
+            currentWeapon = weaponDrop.type;
+            weaponDrop.active = false;
+        }
+
+        // --------- UI ---------
+        scoreText.setString("Score: " + std::to_string(score));
+        livesText.setString("Lives: " + std::to_string(player.lives));
+
+        std::string weaponName =
+            (currentWeapon == WeaponType::Single) ? "Single" :
+            (currentWeapon == WeaponType::Burst)  ? "Burst"  : "Heavy";
+        weaponText.setString("Weapon: " + weaponName);
 
         // --------- DRAW ---------
-        window.clear(sf::Color::Black);
-
+        window.clear();
         window.draw(player.shape);
 
-        if (bullet.active)
-            window.draw(bullet.shape);
+        for (auto& b : bullets)
+            if (b.active) window.draw(b.shape);
 
-        for (int i = 0; i < MAX_ENEMIES; ++i)
-            if (enemies[i].active)
-                window.draw(enemies[i].shape);
+        for (auto& e : enemies)
+            if (e.active) window.draw(e.shape);
 
-        if (font.getInfo().family != "")
-            window.draw(scoreText);
+        if (lifeDrop.active) window.draw(lifeDrop.shape);
+        if (weaponDrop.active) window.draw(weaponDrop.shape);
 
+        window.draw(scoreText);
+        window.draw(livesText);
+        window.draw(weaponText);
         window.display();
     }
 
