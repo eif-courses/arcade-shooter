@@ -1,0 +1,20 @@
+# Build directories
+build/
+cmake-build-*/
+
+# CMake files
+CMakeCache.txt
+CMakeFiles/
+
+# IDE files
+.idea/
+.vscode/
+
+# Compiled binaries
+*.o
+*.a
+*.so
+*.exe
+
+# Dependencies
+_deps/
